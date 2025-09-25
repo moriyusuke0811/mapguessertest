@@ -6,23 +6,68 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
   <style>
-    #map { height: 400px; margin-top: 10px; }
-    #quizImage { max-width: 100%; height: auto; margin-top: 10px; }
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    section {
+      margin-bottom: 40px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    #map, #answerMap {
+      height: 400px;
+      margin-top: 10px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+    }
+    #quizImage {
+      max-width: 100%;
+      height: auto;
+      margin: 10px 0;
+      display: block;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      background: #2c7dce;
+      color: #fff;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: #2364a5;
+    }
+    #result {
+      margin-top: 15px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <h1>場所当てゲーム（プロトタイプ）</h1>
 
-  <h2>出題モード</h2>
-  <input type="file" id="imageUpload" accept="image/*">
-  <div id="map"></div>
-  <button id="saveQuestion">投稿する</button>
+  <section>
+    <h2>出題モード</h2>
+    <input type="file" id="imageUpload" accept="image/*">
+    <div id="map"></div>
+    <button id="saveQuestion" class="btn">投稿する</button>
+  </section>
 
-  <h2>解答モード</h2>
-  <img id="quizImage" src="" alt="問題画像">
-  <div id="answerMap" style="height:400px;"></div>
-  <button id="guessBtn">Guess!</button>
-  <p id="result"></p>
+  <section>
+    <h2>解答モード</h2>
+    <img id="quizImage" src="" alt="問題画像">
+    <div id="answerMap"></div>
+    <button id="guessBtn" class="btn">Guess!</button>
+    <p id="result"></p>
+  </section>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
@@ -56,7 +101,7 @@
     map.addControl(drawControl);
 
     map.on(L.Draw.Event.CREATED, function (event) {
-      drawnItems.clearLayers(); // 1つだけ
+      drawnItems.clearLayers();
       drawnItems.addLayer(event.layer);
       correctPolygon = event.layer.toGeoJSON();
     });
