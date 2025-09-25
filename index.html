@@ -1,70 +1,226 @@
-<!-- 解答モード -->
-<div id="answer" class="tab-content">
-  <h2>解答モード</h2>
-  <div id="questionListContainer"></div>
-  <img id="quizImage" src="" alt="問題画像">
-  <div id="answerMap"></div>
-  <button id="guessBtn" class="btn">Guess!</button>
-  <p id="result"></p>
-</div>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>場所当てゲーム（プロトタイプ）</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    h1 { margin-bottom: 20px; }
 
-<style>
-  #questionListContainer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 15px;
-  }
-  .question-item {
-    border: 2px solid #ccc;
-    border-radius: 6px;
-    padding: 5px;
-    cursor: pointer;
-    width: 120px;
-    text-align: center;
-    background: #f9f9f9;
-  }
-  .question-item img {
-    max-width: 100%;
-    height: 80px;
-    object-fit: cover;
-    border-radius: 4px;
-    margin-bottom: 5px;
-  }
-  .question-item.active {
-    border-color: #2c7dce;
-    background: #eef6ff;
-  }
-</style>
+    /* タブUI */
+    .tabs { display: flex; border-bottom: 2px solid #ccc; margin-bottom: 15px; }
+    .tab {
+      flex: 1; text-align: center; padding: 10px; cursor: pointer;
+      background: #f0f0f0; border: 1px solid #ccc; border-bottom: none;
+    }
+    .tab.active {
+      background: #fff; font-weight: bold;
+      border-top: 2px solid #2c7dce;
+      border-left: 2px solid #2c7dce;
+      border-right: 2px solid #2c7dce;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; border: 2px solid #2c7dce; border-radius: 6px; padding: 15px; }
 
-<script>
-  // 問題リストをリスト形式で読み込む
-  function loadQuestionList() {
-    const questions = JSON.parse(localStorage.getItem("questions") || "[]");
-    const container = document.getElementById("questionListContainer");
-    container.innerHTML = "";
+    #map, #answerMap {
+      height: 400px; margin-top: 10px;
+      border: 2px solid #ddd; border-radius: 6px;
+    }
+    #quizImage {
+      max-width: 100%; height: auto; margin: 10px 0; display: block;
+    }
+    .btn {
+      display: inline-block; margin-top: 10px; padding: 10px 20px;
+      font-size: 16px; border: none; border-radius: 6px;
+      background: #2c7dce; color: #fff; cursor: pointer;
+    }
+    .btn:hover { background: #2364a5; }
+    #result { margin-top: 15px; font-weight: bold; }
 
-    questions.forEach((q, i) => {
-      const div = document.createElement("div");
-      div.className = "question-item";
-      div.innerHTML = `
-        <img src="${q.image}" alt="問題${i+1}">
-        <p>問題 ${i+1}</p>
-      `;
-      div.addEventListener("click", () => {
-        document.querySelectorAll(".question-item").forEach(el => el.classList.remove("active"));
-        div.classList.add("active");
-        loadQuestion(i);
+    /* 問題リストカード */
+    #questionListContainer {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;
+    }
+    .question-item {
+      border: 2px solid #ccc; border-radius: 6px; padding: 5px;
+      cursor: pointer; width: 120px; text-align: center;
+      background: #f9f9f9; transition: 0.2s;
+    }
+    .question-item img {
+      max-width: 100%; height: 80px; object-fit: cover;
+      border-radius: 4px; margin-bottom: 5px;
+    }
+    .question-item:hover { transform: scale(1.05); }
+    .question-item.active {
+      border-color: #2c7dce; background: #eef6ff;
+    }
+  </style>
+</head>
+<body>
+  <h1>場所当てゲーム（プロトタイプ）</h1>
+
+  <!-- タブ -->
+  <div class="tabs">
+    <div class="tab active" data-tab="question">出題モード</div>
+    <div class="tab" data-tab="answer">解答モード</div>
+  </div>
+
+  <!-- 出題モード -->
+  <div id="question" class="tab-content active">
+    <h2>出題モード</h2>
+    <input type="file" id="imageUpload" accept="image/*">
+    <div id="map"></div>
+    <button id="saveQuestion" class="btn">投稿する</button>
+  </div>
+
+  <!-- 解答モード -->
+  <div id="answer" class="tab-content">
+    <h2>解答モード</h2>
+    <div id="questionListContainer"></div>
+    <img id="quizImage" src="" alt="問題画像">
+    <div id="answerMap"></div>
+    <button id="guessBtn" class="btn">Guess!</button>
+    <p id="result"></p>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <script>
+    let correctPolygon = null;
+    let questionImage = null;
+    let selectedQuestionIndex = null;
+
+    // タブ切り替え
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(tab.dataset.tab).classList.add("active");
+
+        if (tab.dataset.tab === "answer") {
+          loadQuestionList();
+        }
       });
-      container.appendChild(div);
     });
 
-    if (questions.length > 0) {
-      container.firstChild.classList.add("active");
-      loadQuestion(0);
-    } else {
-      document.getElementById("quizImage").src = "";
-      document.getElementById("result").textContent = "まだ問題がありません";
+    // 出題マップ
+    const map = L.map('map').setView([35.6812, 139.7671], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: { polygon: true, polyline: false, rectangle: true, circle: false, marker: false, circlemarker: false },
+      edit: { featureGroup: drawnItems }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, function (event) {
+      drawnItems.clearLayers();
+      drawnItems.addLayer(event.layer);
+      correctPolygon = event.layer.toGeoJSON();
+    });
+
+    // 画像アップロード
+    document.getElementById("imageUpload").addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => { questionImage = reader.result; };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // 投稿
+    document.getElementById("saveQuestion").addEventListener("click", () => {
+      if (!questionImage || !correctPolygon) {
+        alert("画像と正解範囲を設定してください");
+        return;
+      }
+      const questions = JSON.parse(localStorage.getItem("questions") || "[]");
+      questions.push({ image: questionImage, polygon: correctPolygon });
+      localStorage.setItem("questions", JSON.stringify(questions));
+      alert("問題が保存されました！");
+      questionImage = null;
+      correctPolygon = null;
+      drawnItems.clearLayers();
+      document.getElementById("imageUpload").value = "";
+    });
+
+    // 解答マップ
+    const answerMap = L.map('answerMap').setView([35.6812, 139.7671], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(answerMap);
+
+    let guessMarker = null;
+    answerMap.on("click", e => {
+      if (guessMarker) answerMap.removeLayer(guessMarker);
+      guessMarker = L.marker(e.latlng).addTo(answerMap);
+      guessMarker.latlng = e.latlng;
+    });
+
+    // 問題一覧ロード
+    function loadQuestionList() {
+      const questions = JSON.parse(localStorage.getItem("questions") || "[]");
+      const container = document.getElementById("questionListContainer");
+      container.innerHTML = "";
+
+      questions.forEach((q, i) => {
+        const div = document.createElement("div");
+        div.className = "question-item";
+        div.innerHTML = `<img src="${q.image}" alt="問題${i+1}"><p>問題 ${i+1}</p>`;
+        div.addEventListener("click", () => {
+          document.querySelectorAll(".question-item").forEach(el => el.classList.remove("active"));
+          div.classList.add("active");
+          loadQuestion(i);
+        });
+        container.appendChild(div);
+      });
+
+      if (questions.length > 0) {
+        container.firstChild.classList.add("active");
+        loadQuestion(0);
+      } else {
+        document.getElementById("quizImage").src = "";
+        document.getElementById("result").textContent = "まだ問題がありません";
+      }
     }
-  }
-</script>
+
+    // 問題ロード
+    function loadQuestion(index) {
+      const questions = JSON.parse(localStorage.getItem("questions") || "[]");
+      if (!questions[index]) return;
+      document.getElementById("quizImage").src = questions[index].image;
+      selectedQuestionIndex = index;
+      document.getElementById("result").textContent = "";
+      if (guessMarker) { answerMap.removeLayer(guessMarker); guessMarker = null; }
+    }
+
+    // 解答チェック
+    document.getElementById("guessBtn").addEventListener("click", () => {
+      if (selectedQuestionIndex === null) { alert("問題を選んでください"); return; }
+      if (!guessMarker) { alert("地図をクリックして予想地点を選んでください"); return; }
+
+      const questions = JSON.parse(localStorage.getItem("questions") || "[]");
+      const q = questions[selectedQuestionIndex];
+      const point = turf.point([guessMarker.latlng.lng, guessMarker.latlng.lat]);
+      const poly = q.polygon.geometry;
+
+      let resultText = "";
+      if (turf.booleanPointInPolygon(point, poly)) {
+        resultText = "🎉 正解！範囲内です。100点！";
+      } else {
+        const centroid = turf.centroid(q.polygon);
+        const distance = turf.distance(point, centroid, {units: 'kilometers'});
+        const score = Math.max(0, Math.round(100 - distance * 10));
+        resultText = `❌ ハズレ。中心からの距離: ${distance.toFixed(2)} km、スコア: ${score}`;
+      }
+      document.getElementById("result").textContent = resultText;
+    });
+  </script>
+</body>
+</html>
