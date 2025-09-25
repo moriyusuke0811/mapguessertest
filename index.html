@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>場所当てゲーム（改良版）</title>
+  <title>場所当てゲーム（多角形範囲版）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
   <style>
     body { font-family: sans-serif; margin: 0; }
     #map { height: 60vh; }
@@ -13,7 +14,7 @@
   </style>
 </head>
 <body>
-  <h2>場所当てゲーム（改良版）</h2>
+  <h2>場所当てゲーム（多角形範囲版）</h2>
 
   <div id="controls">
     <button onclick="setMode('quiz')">出題モード</button>
@@ -24,8 +25,7 @@
     <h3>出題モード</h3>
     <input type="file" id="image-input" accept="image/*"><br>
     <img id="image-preview" class="hidden">
-    <p>地図をクリックして正解範囲の中心を設定 → 半径を入力</p>
-    <label>半径(m): <input type="number" id="radius-input" value="1000"></label>
+    <p>地図上で多角形を描いて正解範囲を設定してください</p>
   </div>
 
   <div id="answer-panel" class="hidden">
@@ -39,16 +39,18 @@
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script>
     const map = L.map('map').setView([20,0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    let mode = "quiz";   // "quiz" or "answer"
-    let answerCircle = null;
+    let mode = "quiz";
+    let answerPolygon = null;
     let userMarker = null;
-    let answerData = null;
+    let polygonCoords = null;
 
     // モード切替
     function setMode(newMode) {
@@ -74,18 +76,39 @@
       }
     });
 
-    // 地図クリックイベント
+    // Leaflet.draw セットアップ
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polyline: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+        polygon: {
+          allowIntersection: false,
+          showArea: true
+        }
+      },
+      edit: {
+        featureGroup: new L.FeatureGroup().addTo(map)
+      }
+    });
+
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      if (mode === "quiz" && e.layerType === 'polygon') {
+        if (answerPolygon) map.removeLayer(answerPolygon);
+        answerPolygon = e.layer;
+        polygonCoords = answerPolygon.getLatLngs()[0].map(p => [p.lng, p.lat]);
+        map.addLayer(answerPolygon);
+        alert("正解範囲を設定しました！");
+      }
+    });
+
+    // 解答クリック
     map.on('click', function(e) {
-      if (mode === "quiz") {
-        // 正解範囲を設定
-        clearMap();
-        const { lat, lng } = e.latlng;
-        const radius = parseInt(document.getElementById("radius-input").value);
-        answerCircle = L.circle([lat, lng], { radius: radius, color: "green" }).addTo(map);
-        answerData = { lat, lng, radius };
-        alert(`正解範囲を設定しました: 中心(${lat.toFixed(3)}, ${lng.toFixed(3)}), 半径 ${radius}m`);
-      } else if (mode === "answer") {
-        // 解答候補を置く
+      if (mode === "answer") {
         if (userMarker) map.removeLayer(userMarker);
         userMarker = L.marker(e.latlng).addTo(map).bindPopup("あなたの解答候補").openPopup();
       }
@@ -93,53 +116,45 @@
 
     // Guessボタン
     document.getElementById("guess-btn").addEventListener("click", function() {
-      if (!answerData || !userMarker) {
+      if (!polygonCoords || !userMarker) {
         alert("正解範囲と解答を設定してください");
         return;
       }
+
       const userLatLng = userMarker.getLatLng();
-      const distance = calcDistance(userLatLng.lat, userLatLng.lng, answerData.lat, answerData.lng);
+      const point = turf.point([userLatLng.lng, userLatLng.lat]);
+      const polygon = turf.polygon([polygonCoords]);
 
       let score;
-      if (distance <= answerData.radius) {
-        score = 100; // 正解範囲内は満点
-      } else if (distance <= answerData.radius * 5) {
-        score = 50;
-      } else if (distance <= answerData.radius * 20) {
-        score = 10;
+      if (turf.booleanPointInPolygon(point, polygon)) {
+        score = 100; // 範囲内なら満点
       } else {
-        score = 0;
+        // 範囲外の場合は最短距離でスコアを計算
+        const distance = turf.pointToLineDistance(point, turf.lineString(polygonCoords), {units: 'kilometers'});
+        if (distance < 10) score = 50;
+        else if (distance < 100) score = 10;
+        else score = 0;
+
+        document.getElementById("result").innerHTML =
+          `解答地点: ${userLatLng.lat.toFixed(3)}, ${userLatLng.lng.toFixed(3)}<br>
+           正解範囲までの距離: ${distance.toFixed(2)} km<br>
+           スコア: ${score} 点`;
+        return;
       }
 
       document.getElementById("result").innerHTML =
         `解答地点: ${userLatLng.lat.toFixed(3)}, ${userLatLng.lng.toFixed(3)}<br>
-         正解中心から ${(distance/1000).toFixed(2)} km<br>
+         範囲内！<br>
          スコア: ${score} 点`;
-      
-      // 正解範囲を再描画
-      if (answerCircle) map.addLayer(answerCircle);
     });
 
-    // 距離計算（ハバーサイン）
-    function calcDistance(lat1, lng1, lat2, lng2) {
-      const R = 6371e3;
-      const φ1 = lat1 * Math.PI/180;
-      const φ2 = lat2 * Math.PI/180;
-      const Δφ = (lat2 - lat1) * Math.PI/180;
-      const Δλ = (lng2 - lng1) * Math.PI/180;
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
-    }
-
-    // 地図クリア
+    // マップクリア
     function clearMap() {
-      if (answerCircle) map.removeLayer(answerCircle);
+      if (answerPolygon) map.removeLayer(answerPolygon);
       if (userMarker) map.removeLayer(userMarker);
-      answerCircle = null;
+      answerPolygon = null;
       userMarker = null;
+      polygonCoords = null;
     }
   </script>
 </body>
