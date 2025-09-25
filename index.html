@@ -13,12 +13,39 @@
     h1 {
       margin-bottom: 20px;
     }
-    section {
-      margin-bottom: 40px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
+
+    /* タブUI */
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #ccc;
+      margin-bottom: 15px;
     }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      cursor: pointer;
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      border-bottom: none;
+    }
+    .tab.active {
+      background: #fff;
+      font-weight: bold;
+      border-top: 2px solid #2c7dce;
+      border-left: 2px solid #2c7dce;
+      border-right: 2px solid #2c7dce;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+      border: 2px solid #2c7dce;
+      border-radius: 6px;
+      padding: 15px;
+    }
+
     #map, #answerMap {
       height: 400px;
       margin-top: 10px;
@@ -54,20 +81,28 @@
 <body>
   <h1>場所当てゲーム（プロトタイプ）</h1>
 
-  <section>
+  <!-- タブ -->
+  <div class="tabs">
+    <div class="tab active" data-tab="question">出題モード</div>
+    <div class="tab" data-tab="answer">解答モード</div>
+  </div>
+
+  <!-- 出題モード -->
+  <div id="question" class="tab-content active">
     <h2>出題モード</h2>
     <input type="file" id="imageUpload" accept="image/*">
     <div id="map"></div>
     <button id="saveQuestion" class="btn">投稿する</button>
-  </section>
+  </div>
 
-  <section>
+  <!-- 解答モード -->
+  <div id="answer" class="tab-content">
     <h2>解答モード</h2>
     <img id="quizImage" src="" alt="問題画像">
     <div id="answerMap"></div>
     <button id="guessBtn" class="btn">Guess!</button>
     <p id="result"></p>
-  </section>
+  </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
@@ -75,6 +110,16 @@
   <script>
     let correctPolygon = null;
     let questionImage = null;
+
+    // タブ切り替え処理
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(tab.dataset.tab).classList.add("active");
+      });
+    });
 
     // 出題モード用マップ
     const map = L.map('map').setView([35.6812, 139.7671], 5);
@@ -128,7 +173,7 @@
       alert("問題が保存されました！（このデモではブラウザ内のみ）");
     });
 
-    // 解答モード
+    // 解答モード用マップ
     const answerMap = L.map('answerMap').setView([35.6812, 139.7671], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
@@ -141,6 +186,7 @@
       guessMarker.latlng = e.latlng;
     });
 
+    // 解答チェック
     document.getElementById("guessBtn").addEventListener("click", () => {
       if (!guessMarker) {
         alert("地図をクリックして予想地点を選んでください");
