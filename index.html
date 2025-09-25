@@ -2,160 +2,124 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>場所当てゲーム（多角形範囲版）</title>
+  <title>場所当てゲーム（プロトタイプ）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
   <style>
-    body { font-family: sans-serif; margin: 0; }
-    #map { height: 60vh; }
-    #image-preview, #quiz-image { max-width: 100%; max-height: 40vh; margin: 10px 0; }
-    #controls { padding: 10px; }
-    .hidden { display: none; }
+    #map { height: 400px; margin-top: 10px; }
+    #quizImage { max-width: 100%; height: auto; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h2>場所当てゲーム（多角形範囲版）</h2>
+  <h1>場所当てゲーム（プロトタイプ）</h1>
 
-  <div id="controls">
-    <button onclick="setMode('quiz')">出題モード</button>
-    <button onclick="setMode('answer')">解答モード</button>
-  </div>
-
-  <div id="quiz-panel">
-    <h3>出題モード</h3>
-    <input type="file" id="image-input" accept="image/*"><br>
-    <img id="image-preview" class="hidden">
-    <p>地図上で多角形を描いて正解範囲を設定してください</p>
-  </div>
-
-  <div id="answer-panel" class="hidden">
-    <h3>解答モード</h3>
-    <img id="quiz-image" class="hidden">
-    <p>地図をクリックして答えを選び、Guessを押してください</p>
-    <button id="guess-btn">Guess</button>
-    <div id="result"></div>
-  </div>
-
+  <h2>出題モード</h2>
+  <input type="file" id="imageUpload" accept="image/*">
   <div id="map"></div>
+  <button id="saveQuestion">投稿する</button>
+
+  <h2>解答モード</h2>
+  <img id="quizImage" src="" alt="問題画像">
+  <div id="answerMap" style="height:400px;"></div>
+  <button id="guessBtn">Guess!</button>
+  <p id="result"></p>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script>
-    const map = L.map('map').setView([20,0], 2);
+    let correctPolygon = null;
+    let questionImage = null;
+
+    // 出題モード用マップ
+    const map = L.map('map').setView([35.6812, 139.7671], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    let mode = "quiz";
-    let answerPolygon = null;
-    let userMarker = null;
-    let polygonCoords = null;
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
 
-    // モード切替
-    function setMode(newMode) {
-      mode = newMode;
-      document.getElementById("quiz-panel").classList.toggle("hidden", newMode !== "quiz");
-      document.getElementById("answer-panel").classList.toggle("hidden", newMode !== "answer");
-      clearMap();
-      document.getElementById("result").innerHTML = "";
-    }
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: true,
+        polyline: false,
+        rectangle: true,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems
+      }
+    });
+    map.addControl(drawControl);
 
-    // 出題用画像アップロード
-    document.getElementById("image-input").addEventListener("change", function(e) {
+    map.on(L.Draw.Event.CREATED, function (event) {
+      drawnItems.clearLayers(); // 1つだけ
+      drawnItems.addLayer(event.layer);
+      correctPolygon = event.layer.toGeoJSON();
+    });
+
+    // 画像アップロード
+    document.getElementById("imageUpload").addEventListener("change", e => {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = function(event) {
-          document.getElementById("image-preview").src = event.target.result;
-          document.getElementById("image-preview").classList.remove("hidden");
-          document.getElementById("quiz-image").src = event.target.result;
-          document.getElementById("quiz-image").classList.remove("hidden");
+        reader.onload = () => {
+          questionImage = reader.result;
+          document.getElementById("quizImage").src = questionImage;
         };
         reader.readAsDataURL(file);
       }
     });
 
-    // Leaflet.draw セットアップ
-    const drawControl = new L.Control.Draw({
-      draw: {
-        polyline: false,
-        rectangle: false,
-        circle: false,
-        marker: false,
-        circlemarker: false,
-        polygon: {
-          allowIntersection: false,
-          showArea: true
-        }
-      },
-      edit: {
-        featureGroup: new L.FeatureGroup().addTo(map)
+    // 投稿
+    document.getElementById("saveQuestion").addEventListener("click", () => {
+      if (!questionImage || !correctPolygon) {
+        alert("画像と正解範囲を設定してください");
+        return;
       }
+      alert("問題が保存されました！（このデモではブラウザ内のみ）");
     });
 
-    map.addControl(drawControl);
+    // 解答モード
+    const answerMap = L.map('answerMap').setView([35.6812, 139.7671], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(answerMap);
 
-    map.on(L.Draw.Event.CREATED, function (e) {
-      if (mode === "quiz" && e.layerType === 'polygon') {
-        if (answerPolygon) map.removeLayer(answerPolygon);
-        answerPolygon = e.layer;
-        polygonCoords = answerPolygon.getLatLngs()[0].map(p => [p.lng, p.lat]);
-        map.addLayer(answerPolygon);
-        alert("正解範囲を設定しました！");
-      }
+    let guessMarker = null;
+    answerMap.on("click", e => {
+      if (guessMarker) answerMap.removeLayer(guessMarker);
+      guessMarker = L.marker(e.latlng).addTo(answerMap);
+      guessMarker.latlng = e.latlng;
     });
 
-    // 解答クリック
-    map.on('click', function(e) {
-      if (mode === "answer") {
-        if (userMarker) map.removeLayer(userMarker);
-        userMarker = L.marker(e.latlng).addTo(map).bindPopup("あなたの解答候補").openPopup();
+    document.getElementById("guessBtn").addEventListener("click", () => {
+      if (!guessMarker) {
+        alert("地図をクリックして予想地点を選んでください");
+        return;
       }
-    });
-
-    // Guessボタン
-    document.getElementById("guess-btn").addEventListener("click", function() {
-      if (!polygonCoords || !userMarker) {
-        alert("正解範囲と解答を設定してください");
+      if (!correctPolygon) {
+        alert("まだ出題が保存されていません");
         return;
       }
 
-      const userLatLng = userMarker.getLatLng();
-      const point = turf.point([userLatLng.lng, userLatLng.lat]);
-      const polygon = turf.polygon([polygonCoords]);
+      const point = turf.point([guessMarker.latlng.lng, guessMarker.latlng.lat]);
+      const poly = correctPolygon.geometry;
 
-      let score;
-      if (turf.booleanPointInPolygon(point, polygon)) {
-        score = 100; // 範囲内なら満点
+      let resultText = "";
+      if (turf.booleanPointInPolygon(point, poly)) {
+        resultText = "🎉 正解！範囲内です。100点！";
       } else {
-        // 範囲外の場合は最短距離でスコアを計算
-        const distance = turf.pointToLineDistance(point, turf.lineString(polygonCoords), {units: 'kilometers'});
-        if (distance < 10) score = 50;
-        else if (distance < 100) score = 10;
-        else score = 0;
-
-        document.getElementById("result").innerHTML =
-          `解答地点: ${userLatLng.lat.toFixed(3)}, ${userLatLng.lng.toFixed(3)}<br>
-           正解範囲までの距離: ${distance.toFixed(2)} km<br>
-           スコア: ${score} 点`;
-        return;
+        const centroid = turf.centroid(correctPolygon);
+        const distance = turf.distance(point, centroid, {units: 'kilometers'});
+        const score = Math.max(0, Math.round(100 - distance * 10));
+        resultText = `❌ ハズレ。中心からの距離: ${distance.toFixed(2)} km、スコア: ${score}`;
       }
-
-      document.getElementById("result").innerHTML =
-        `解答地点: ${userLatLng.lat.toFixed(3)}, ${userLatLng.lng.toFixed(3)}<br>
-         範囲内！<br>
-         スコア: ${score} 点`;
+      document.getElementById("result").textContent = resultText;
     });
-
-    // マップクリア
-    function clearMap() {
-      if (answerPolygon) map.removeLayer(answerPolygon);
-      if (userMarker) map.removeLayer(userMarker);
-      answerPolygon = null;
-      userMarker = null;
-      polygonCoords = null;
-    }
   </script>
 </body>
 </html>
